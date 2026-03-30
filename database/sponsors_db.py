@@ -1,9 +1,15 @@
 # database/sponsors_db.py
-
 from database.db_manager import get_connection
 import datetime
 
 conn, cursor = get_connection()
+
+# Московское время (UTC+3)
+MOSCOW_TZ = datetime.timezone(datetime.timedelta(hours=3))
+
+def get_moscow_now():
+    """Возвращает текущее московское время как строку"""
+    return datetime.datetime.now(MOSCOW_TZ).strftime('%Y-%m-%d %H:%M:%S')
 
 
 def init_sponsors_table():

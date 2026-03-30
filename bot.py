@@ -91,14 +91,40 @@ logger.info(f"📱 Админы: {ADMIN_IDS}")
 # ==================================================
 # БЛОК 5: ГЛАВНЫЙ ЦИКЛ ОБРАБОТКИ СООБЩЕНИЙ
 # ==================================================
+
+# Словарь для хранения ID последних обработанных сообщений
+processed_messages = {}
+
 for event in longpoll.listen():
     if event.type == VkEventType.MESSAGE_NEW and event.to_me:
         user_id = event.user_id
         text = event.text.strip() if event.text else ""
         
-        # Игнорируем пустые сообщения
         if not text:
             continue
+        
+        # ==============================================
+        # ЗАЩИТА ОТ ДУБЛИРОВАНИЯ (улучшенная)
+        # ==============================================
+        # Используем комбинацию user_id + text + timestamp для уникальности
+        import time
+        message_key = f"{user_id}_{text}_{int(time.time() / 2)}"  # 2 секунды окно
+        
+        # Альтернатива: если есть message_id
+        message_id = getattr(event, 'message_id', None)
+        if message_id:
+            message_key = f"{user_id}_{message_id}"
+        
+        if message_key in processed_messages:
+            continue  # Пропускаем дубль
+        
+        processed_messages[message_key] = True
+        
+        # Очищаем старые записи (оставляем последние 50)
+        if len(processed_messages) > 50:
+            # Удаляем самый старый ключ
+            oldest_key = next(iter(processed_messages))
+            del processed_messages[oldest_key]
         
         # ==============================================
         # БЛОК 6: ПРОВЕРКА СОСТОЯНИЙ ПОЛЬЗОВАТЕЛЯ (ожидание ввода)
@@ -136,7 +162,7 @@ for event in longpoll.listen():
         
         # --- ОБРАБОТКА НОВЫХ ПОЛЬЗОВАТЕЛЕЙ (кнопка "Начать") ---
         
-        if text == "/start" or text == "Начать" or text == "начать" or text == "Start" or text == "start":
+        if text == "/start":
             if is_sponsor(user_id):
                 days_count = get_sponsor_days(user_id)
                 send_message(vk, user_id, 

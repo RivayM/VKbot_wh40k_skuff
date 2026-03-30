@@ -1,7 +1,8 @@
 # utils/helpers.py
+import time
 
 def send_message(vk, user_id, message, keyboard=None):
-    """Отправляет сообщение пользователю"""
+    """Отправляет сообщение пользователю с защитой от дублей"""
     params = {
         'user_id': user_id,
         'message': message,
@@ -15,6 +16,8 @@ def send_message(vk, user_id, message, keyboard=None):
             params['keyboard'] = keyboard
     
     try:
+        # Небольшая задержка перед отправкой
+        time.sleep(0.3)
         vk.messages.send(**params)
     except Exception as e:
         print(f"Ошибка отправки сообщения {user_id}: {e}")

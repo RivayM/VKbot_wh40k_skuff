@@ -1,7 +1,43 @@
+# database/key_db.py (добавить в начало файла)
+
 from database.db_manager import get_connection
+import datetime
 
 conn, cursor = get_connection()
 
+# Московское время (UTC+3)
+MOSCOW_TZ = datetime.timezone(datetime.timedelta(hours=3))
+
+def get_moscow_now():
+    """Возвращает текущее московское время как строку"""
+    return datetime.datetime.now(MOSCOW_TZ).strftime('%Y-%m-%d %H:%M:%S')
+
+
+def take_key(user_id, user_name):
+    """Забирает ключ пользователем"""
+    cursor.execute('SELECT user_id, user_name FROM key_holder WHERE id = 1')
+    current = cursor.fetchone()
+    
+    if current:
+        old_user_id, old_user_name = current
+        if old_user_id == user_id:
+            return None
+        
+        moscow_now = get_moscow_now()
+        cursor.execute('''
+            UPDATE key_holder 
+            SET user_id = ?, user_name = ?, taken_at = ?
+            WHERE id = 1
+        ''', (user_id, user_name, moscow_now))
+        conn.commit()
+        return (old_user_id, old_user_name)
+    else:
+        moscow_now = get_moscow_now()
+        cursor.execute('''
+            INSERT INTO key_holder (id, user_id, user_name, taken_at) VALUES (1, ?, ?, ?)
+        ''', (user_id, user_name, moscow_now))
+        conn.commit()
+        return True
 
 def init_key_table():
     """Создаёт таблицу для ключей"""
