@@ -1,168 +1,209 @@
+# ==================================================
+# БЛОК 1: ИМПОРТ БИБЛИОТЕК И НАСТРОЙКИ
+# ==================================================
 import vk_api
 import os
 import logging
 from dotenv import load_dotenv
 from vk_api.longpoll import VkLongPoll, VkEventType
-from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 
+from database import (
+    init_sponsors_table,
+    init_key_table,
+    is_sponsor,
+    add_sponsor,
+    remove_sponsor,
+    get_all_sponsors,
+    get_sponsor,          # <-- ДОБАВИТЬ
+    get_sponsor_days,     # <-- ДОБАВИТЬ
+    # waiting states
+    add_waiting_for_name,
+    remove_waiting_for_name,
+    is_waiting_for_name,
+    add_waiting_for_photo,
+    remove_waiting_for_photo,
+    is_waiting_for_photo,
+    add_waiting_for_unsubscribe,
+    remove_waiting_for_unsubscribe,
+    is_waiting_for_unsubscribe,
+    # key functions
+    take_key,
+    return_key,
+    get_key_holder,
+    has_key
+)
+from database import init_tournaments_table 
+from keyboards import get_main_keyboard, get_tournament_keyboard, get_sponsor_keyboard, get_key_keyboard
+from utils.helpers import send_message
 
-# Импорт базы данных
-from database import init_db, add_sponsor, get_sponsor, remove_sponsor
+from handlers.sponsorship import (
+    handle_start, handle_sponsor_menu, handle_name_input,
+    handle_payment_request, handle_photo_input, handle_unsubscribe,
+    handle_unsubscribe_confirm, handle_back,
+    is_waiting_for_name as sponsorship_is_waiting_for_name,
+    is_waiting_for_photo as sponsorship_is_waiting_for_photo,
+    is_waiting_for_unsubscribe as sponsorship_is_waiting_for_unsubscribe
+)
 
+from handlers.tournament import (
+    handle_tournament_menu, handle_register_for_tournament,
+    handle_tournament_selection, handle_start_tournament,
+    handle_tournament_name_input, handle_tournament_date_input,
+    handle_complete_tournament, handle_tournament_complete_selection,
+    handle_list_tournaments, handle_back as tournament_back,
+    is_waiting_for_tournament_name, is_waiting_for_tournament_date,
+    is_waiting_for_tournament_reg
+)
+
+from handlers.key_handler import handle_take_key, handle_return_key, handle_who_has_key
+# ==================================================
+# БЛОК 2: ЗАГРУЗКА ПЕРЕМЕННЫХ ОКРУЖЕНИЯ (ENV)
+# ==================================================
 load_dotenv()
 
 TOKEN = os.getenv("VK_TOKEN")
 ADMIN_IDS = [int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
 
+
+# ==================================================
+# БЛОК 3: НАСТРОЙКА ЛОГГИРОВАНИЯ
+# ==================================================
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Инициализация базы данных
-init_db()
-logger.info("✅ База данных подключена")
 
-# ========== КЛАВИАТУРЫ ==========
-def get_main_keyboard():
-    keyboard = VkKeyboard(one_time=False)
-    keyboard.add_button("💰 Стать спонсором клуба", color=VkKeyboardColor.PRIMARY)
-    return keyboard
+# ==================================================
+# БЛОК 4: ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ И ПОДКЛЮЧЕНИЕ К ВК
+# ==================================================
+init_sponsors_table()  # таблицы спонсоров
+init_key_table()       # таблица ключей
+init_tournaments_table()        # турниры
+logger.info("✅ Базы данных инициализированы")
 
-def get_sponsor_keyboard():
-    keyboard = VkKeyboard(one_time=False)
-    keyboard.add_button("✅ Подтвердить оплату", color=VkKeyboardColor.POSITIVE)
-    keyboard.add_line()
-    keyboard.add_button("❌ Отписаться", color=VkKeyboardColor.NEGATIVE)
-    return keyboard
-
-# ========== ФУНКЦИЯ ОТПРАВКИ ==========
-def send_keyboard(vk, user_id, message, keyboard):
-    """Отправка сообщения с клавиатурой"""
-    try:
-        vk.messages.send(
-            user_id=user_id,
-            message=message,
-            keyboard=keyboard.get_keyboard(),
-            random_id=0
-        )
-        logger.info(f"✅ Клавиатура отправлена пользователю {user_id}")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Ошибка отправки клавиатуры: {e}")
-        return False
-
-# ========== ХРАНИЛИЩЕ ДЛЯ ОЖИДАНИЯ ВВОДА ==========
-waiting_for_name = {}
-
-# ========== ОСНОВНОЙ КОД ==========
 vk_session = vk_api.VkApi(token=TOKEN)
 vk = vk_session.get_api()
 longpoll = VkLongPoll(vk_session)
 
-logger.info("=" * 50)
 logger.info("🚀 БОТ ЗАПУЩЕН")
 logger.info(f"📱 Админы: {ADMIN_IDS}")
-logger.info("=" * 50)
 
+
+# ==================================================
+# БЛОК 5: ГЛАВНЫЙ ЦИКЛ ОБРАБОТКИ СООБЩЕНИЙ
+# ==================================================
 for event in longpoll.listen():
     if event.type == VkEventType.MESSAGE_NEW and event.to_me:
         user_id = event.user_id
         text = event.text.strip() if event.text else ""
         
-        logger.info(f"📨 Сообщение от {user_id}: '{text}'")
-        
-        # === ОБРАБОТКА ОЖИДАНИЯ ВВОДА ИМЕНИ ===
-        if user_id in waiting_for_name:
-            name = text
-            if len(name) > 50:
-                vk.messages.send(
-                    user_id=user_id,
-                    message="❌ Имя слишком длинное. Пожалуйста, введите имя короче (до 50 символов):",
-                    random_id=0
-                )
-                continue
-            
-            # Сохраняем спонсора
-            add_sponsor(user_id, name)
-            del waiting_for_name[user_id]
-            
-            vk.messages.send(
-                user_id=user_id,
-                message=f"✅ Отлично, {name}! Вы зарегистрированы как спонсор!\n\nТеперь доступны кнопки:",
-                keyboard=get_sponsor_keyboard().get_keyboard(),
-                random_id=0
-            )
+        # Игнорируем пустые сообщения
+        if not text:
             continue
         
-        # === ОБРАБОТКА КОМАНД ===
+        # ==============================================
+        # БЛОК 6: ПРОВЕРКА СОСТОЯНИЙ ПОЛЬЗОВАТЕЛЯ (ожидание ввода)
+        # ==============================================
         
-        # Команда /start
-        if text == "/start" or text.lower() == "начать":
-            logger.info(f"🔹 Обработка /start для {user_id}")
-            sponsor = get_sponsor(user_id)
-            if sponsor and sponsor['status'] == 'active':
-                send_keyboard(vk, user_id, "✅ Вы уже являетесь спонсором!\n\nВыберите действие:", get_sponsor_keyboard())
+        if is_waiting_for_name(user_id):
+            handle_name_input(vk, user_id, text, send_message)
+            continue
+        
+        if is_waiting_for_photo(user_id):
+            handle_photo_input(vk, user_id, event.attachments, ADMIN_IDS, send_message)
+            continue
+        
+        if is_waiting_for_unsubscribe(user_id):
+            handle_unsubscribe_confirm(vk, user_id, text, send_message)
+            continue
+        
+        if is_waiting_for_tournament_name(user_id):
+            handle_tournament_name_input(vk, user_id, text, send_message)
+            continue
+        
+        if is_waiting_for_tournament_date(user_id):
+            handle_tournament_date_input(vk, user_id, text, send_message)
+            continue
+        
+        if is_waiting_for_tournament_reg(user_id):
+            if handle_tournament_selection(vk, user_id, text, send_message):
+                continue
+            if handle_tournament_complete_selection(vk, user_id, text, send_message):
+                continue
+        
+        # ==============================================
+        # БЛОК 7: ОБРАБОТКА КОМАНД (КНОПОК И ТЕКСТА)
+        # ==============================================
+        
+        # --- ОБРАБОТКА НОВЫХ ПОЛЬЗОВАТЕЛЕЙ (кнопка "Начать") ---
+        
+        if text == "/start" or text == "Начать" or text == "начать" or text == "Start" or text == "start":
+            if is_sponsor(user_id):
+                days_count = get_sponsor_days(user_id)
+                send_message(vk, user_id, 
+                    f"🏠 С возвращением!\n\nВы спонсор уже {days_count} дней! 🙏", 
+                    get_main_keyboard())
             else:
-                send_keyboard(vk, user_id, "👋 Добро пожаловать!\n\n💰 Нажмите кнопку, чтобы стать спонсором:", get_main_keyboard())
+                send_message(vk, user_id, 
+                    "🏠 Добро пожаловать!\n\nЯ бот для управления турнирами, спонсорами и ключами.\n\n"
+                    "Выберите раздел в меню ниже:", 
+                    get_main_keyboard())
         
-        # Кнопка "Стать спонсором"
-        elif text == "💰 Стать спонсором клуба":
-            logger.info(f"🔹 Обработка 'Стать спонсором' для {user_id}")
-            sponsor = get_sponsor(user_id)
-            if sponsor and sponsor['status'] == 'active':
-                vk.messages.send(
-                    user_id=user_id,
-                    message="❌ Вы уже являетесь спонсором!",
-                    keyboard=get_sponsor_keyboard().get_keyboard(),
-                    random_id=0
-                )
-            else:
-                waiting_for_name[user_id] = True
-                vk.messages.send(
-                    user_id=user_id,
-                    message="📝 Введите ваше имя (как вы хотите, чтобы вас называли):",
-                    random_id=0
-                )
+        # --- ГЛАВНЫЕ РАЗДЕЛЫ МЕНЮ ---
         
-        # Кнопка "Подтвердить оплату"
+        elif text == "🏆 ТУРНИРЫ":
+            send_message(vk, user_id, "🏆 Раздел ТУРНИРЫ\n\nВыберите действие:", get_tournament_keyboard())
+        
+        elif text == "💰 СПОНСОР":
+            send_message(vk, user_id, "💰 Раздел СПОНСОР\n\nВыберите действие:", get_sponsor_keyboard())
+        
+        elif text == "🔑 КЛЮЧИ":
+            send_message(vk, user_id, "🔑 Раздел КЛЮЧИ\n\nВыберите действие:", get_key_keyboard())
+        
+        # --- КНОПКИ РАЗДЕЛА ТУРНИРЫ ---
+        
+        elif text == "📝 Зарегистрироваться":
+            send_message(vk, user_id, "📝 Функция регистрации на турнир в разработке.\n\nСкоро появится!", get_tournament_keyboard())
+        
+        elif text == "📊 Сдать результат":
+            send_message(vk, user_id, "📊 Функция сдачи результатов в разработке.\n\nСкоро появится!", get_tournament_keyboard())
+        
+        # --- КНОПКИ РАЗДЕЛА СПОНСОР ---
+        
+        elif text == "💰 Стать спонсором":
+            handle_sponsor_menu(vk, user_id, send_message)
+        
         elif text == "✅ Подтвердить оплату":
-            logger.info(f"🔹 Обработка 'Подтвердить оплату' для {user_id}")
-            sponsor = get_sponsor(user_id)
-            if not sponsor or sponsor['status'] != 'active':
-                vk.messages.send(
-                    user_id=user_id,
-                    message="❌ Вы не зарегистрированы как спонсор. Нажмите 'Стать спонсором клуба'",
-                    random_id=0
-                )
-            else:
-                vk.messages.send(
-                    user_id=user_id,
-                    message="📸 Отправьте фото подтверждения оплаты:",
-                    random_id=0
-                )
+            handle_payment_request(vk, user_id, send_message)
         
-        # Кнопка "Отписаться"
         elif text == "❌ Отписаться":
-            logger.info(f"🔹 Обработка 'Отписаться' для {user_id}")
-            sponsor = get_sponsor(user_id)
-            if sponsor and sponsor['status'] == 'active':
-                remove_sponsor(user_id)
-                vk.messages.send(
-                    user_id=user_id,
-                    message="❌ Вы отписались от спонсорства.\n\nЧтобы вернуться, нажмите /start",
-                    keyboard=get_main_keyboard().get_keyboard(),
-                    random_id=0
-                )
-            else:
-                vk.messages.send(
-                    user_id=user_id,
-                    message="❌ Вы не являетесь спонсором.\n\nНажмите /start для начала.",
-                    random_id=0
-                )
+            handle_unsubscribe(vk, user_id, send_message)
         
-        # Неизвестная команда
+        # --- КНОПКИ РАЗДЕЛА КЛЮЧИ ---
+        
+        elif text == "🔑 Взять ключ":
+            handle_take_key(vk, user_id, send_message, ADMIN_IDS)
+        
+        elif text == "🔓 Отдать ключ":
+            handle_return_key(vk, user_id, send_message, ADMIN_IDS)
+        
+        elif text == "❓ Кто держит ключ":
+            handle_who_has_key(vk, user_id, send_message)
+        
+        # --- КНОПКА НАЗАД ---
+        
+        elif text == "🔙 Назад":
+            from handlers.sponsorship import handle_cancel_photo
+            if handle_cancel_photo(vk, user_id, send_message):
+                continue
+            if is_sponsor(user_id):
+                days_count = get_sponsor_days(user_id)
+                send_message(vk, user_id, 
+                    f"🏠 Главное меню\n\nВы спонсор уже {days_count} дней! 🙏", 
+                    get_main_keyboard())
+            else:
+                send_message(vk, user_id, "🏠 Главное меню:", get_main_keyboard())
+        
+        # --- НЕИЗВЕСТНАЯ КОМАНДА ---
+        
         else:
-            vk.messages.send(
-                user_id=user_id,
-                message="❓ Неизвестная команда.\n\nНажмите /start для начала работы.",
-                random_id=0
-            )
+            send_message(vk, user_id, "❓ Неизвестная команда.\n\nНажмите /start или кнопку 'Начать' для начала работы.")
