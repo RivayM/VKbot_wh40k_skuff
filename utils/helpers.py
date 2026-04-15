@@ -24,22 +24,15 @@ def send_message(vk, user_id, message, keyboard=None):
 
 
 def extract_photo_url(attachments):
-    """Извлекает URL фото из вложения VK"""
     if not attachments:
         return None
-    
     for attachment in attachments:
         if attachment.get('type') == 'photo':
-            photo = attachment.get('photo', {})
-            sizes = photo.get('sizes', [])
+            sizes = attachment['photo'].get('sizes', [])
             if sizes:
-                # Ищем максимальный размер
-                for size in sizes:
-                    if size.get('type') in ['w', 'z', 'y', 'x']:
-                        return size.get('url')
+                # берём самое большое (обычно последний элемент)
                 return sizes[-1].get('url')
     return None
-
 
 def extract_photo_id(attachments):
     """Извлекает photo_id из вложения VK"""

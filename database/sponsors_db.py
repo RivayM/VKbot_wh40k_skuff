@@ -21,7 +21,7 @@ def init_sponsors_table():
             registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
+
     # Добавляем колонку last_payment если её нет
     try:
         cursor.execute('ALTER TABLE sponsors ADD COLUMN last_payment TIMESTAMP')
@@ -66,14 +66,17 @@ def remove_sponsor(user_id):
     conn.commit()
 
 
-def get_all_sponsors():
-    cursor.execute('SELECT user_id, name, registered_at FROM sponsors')
-    return cursor.fetchall()
-
-
 def get_sponsor(user_id):
-    cursor.execute('SELECT user_id, name, registered_at FROM sponsors WHERE user_id = ?', (user_id,))
-    return cursor.fetchone()
+    cursor.execute('SELECT user_id, name, registered_at, last_payment FROM sponsors WHERE user_id = ?', (user_id,))
+    row = cursor.fetchone()
+    if row:
+        return {'user_id': row[0], 'name': row[1], 'registered_at': row[2], 'last_payment': row[3]}
+    return None
+
+def get_all_sponsors():
+    cursor.execute('SELECT user_id, name, registered_at, last_payment FROM sponsors')
+    rows = cursor.fetchall()
+    return [{'user_id': r[0], 'name': r[1], 'registered_at': r[2], 'last_payment': r[3]} for r in rows]
 
 
 def get_sponsor_days(user_id):
