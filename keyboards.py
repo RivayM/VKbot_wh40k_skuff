@@ -205,6 +205,8 @@ def get_sponsor_keyboard(is_sponsor=False, is_admin=False):
         keyboard.add_button('📢 Напомнить об оплате', color=VkKeyboardColor.SECONDARY)
         keyboard.add_line()
         keyboard.add_button('📋 Показать список спонсоров', color=VkKeyboardColor.PRIMARY)
+        keyboard.add_line()
+        keyboard.add_button('🔄 Сбросить месячные суммы', color=VkKeyboardColor.NEGATIVE)
     keyboard.add_line()
     keyboard.add_button('🔙 Назад', color=VkKeyboardColor.NEGATIVE)
     return keyboard

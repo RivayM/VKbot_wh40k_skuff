@@ -13,6 +13,7 @@ from database.sponsors_db import (
     get_sponsor,
     get_sponsor_days,
     update_payment_date,
+    reset_monthly_amounts,   # <-- добавить
     add_waiting_for_name,
     remove_waiting_for_name,
     is_waiting_for_name,
@@ -79,5 +80,5 @@ __all__ = [
     'get_registration_by_user', 'is_registered', 'update_registration_roster',
     'add_payment', 'get_pending_payments', 'approve_payment', 'reject_payment',
     'create_match', 'get_matches_by_round', 'get_match', 'update_match_result',
-    'get_leaderboard', 'get_registration_by_id'
+    'get_leaderboard', 'get_registration_by_id',
 ]

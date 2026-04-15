@@ -134,7 +134,8 @@ for event in longpoll.listen():
                 del waiting_for_new_tournament_date[user_id]
             if user_id in waiting_for_new_tournament_max_players:
                 del waiting_for_new_tournament_max_players[user_id]
-
+            if user_id in waiting_for_reset_confirm:
+                del waiting_for_reset_confirm[user_id]
             if user_id in waiting_for_edit_army:
                 del waiting_for_edit_army[user_id]
             if user_id in waiting_for_edit_choice:
@@ -172,9 +173,15 @@ for event in longpoll.listen():
             handle_payment_photo(vk, user_id, event.attachments, send_message, ADMIN_IDS, is_admin)
             continue
 
-        if user_id in waiting_for_payment_amount:
-            handle_payment_amount(vk, user_id, text, send_message)
+        if user_id in waiting_for_reset_confirm:
+            is_admin = user_id in ADMIN_IDS
+            handle_reset_confirm(vk, user_id, text, send_message, is_admin)
             continue
+
+        if user_id in waiting_for_payment_amount:
+            is_admin = user_id in ADMIN_IDS
+            handle_payment_amount(vk, user_id, text, send_message, is_admin, ADMIN_IDS)
+            continue    
 
         # Состояния для турниров (объявление тура)
         if user_id in waiting_for_tour_announcement:
@@ -394,6 +401,9 @@ for event in longpoll.listen():
         elif text == "❌ Отписаться":
             # Запускаем процесс отписки (устанавливаем состояние ожидания)
             handle_unsubscribe_confirm(vk, user_id, send_message)
+
+        elif text == "🔄 Сбросить месячные суммы" and user_id in ADMIN_IDS:
+            handle_reset_monthly(vk, user_id, send_message, is_admin=True)
 
         elif text == "📋 Показать список спонсоров" and user_id in ADMIN_IDS:
             handle_show_sponsors(vk, user_id, send_message, is_admin=True)
