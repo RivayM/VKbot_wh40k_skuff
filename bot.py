@@ -400,7 +400,7 @@ for event in longpoll.listen():
 
         elif text == "❌ Отписаться":
             # Запускаем процесс отписки (устанавливаем состояние ожидания)
-            handle_unsubscribe_confirm(vk, user_id, send_message)
+            handle_unsubscribe(vk, user_id, send_message)
 
         elif text == "🔄 Сбросить месячные суммы" and user_id in ADMIN_IDS:
             handle_reset_monthly(vk, user_id, send_message, is_admin=True)

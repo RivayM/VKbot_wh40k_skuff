@@ -110,6 +110,12 @@ def handle_unsubscribe_confirm(vk, user_id, text, send_message_func, is_admin=Fa
         send_message_func(vk, user_id, "Ответьте 'Да' или 'Нет'.")
     return True
 
+def handle_unsubscribe(vk, user_id, send_message_func):
+    if not is_sponsor(user_id):
+        send_message_func(vk, user_id, "❌ Вы не являетесь спонсором.")
+        return
+    waiting_for_unsubscribe[user_id] = True
+    send_message_func(vk, user_id, "⚠️ Вы уверены, что хотите отписаться?\n\nНапишите 'Да' или 'Нет'.")
 
 def handle_show_sponsors(vk, user_id, send_message_func, is_admin=False):
     if not is_admin:
