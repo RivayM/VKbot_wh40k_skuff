@@ -8,15 +8,17 @@ from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 # ==================================================
 
 def get_main_keyboard():
-    """Главная клавиатура бота (вертикально)"""
     keyboard = VkKeyboard(one_time=False)
+    keyboard.add_button('📋 МЕРОПРИЯТИЯ', color=VkKeyboardColor.PRIMARY)
+    keyboard.add_line()
     keyboard.add_button('🏆 ТУРНИРЫ', color=VkKeyboardColor.POSITIVE)
-    keyboard.add_line()  
+    keyboard.add_line()
+    keyboard.add_button('🎲 Резерв стола', color=VkKeyboardColor.NEGATIVE)   # новая кнопка
+    keyboard.add_line()
     keyboard.add_button('💰 СПОНСОР', color=VkKeyboardColor.PRIMARY)
-    keyboard.add_line()  
+    keyboard.add_line()
     keyboard.add_button('🔑 КЛЮЧИ', color=VkKeyboardColor.SECONDARY)
     return keyboard
-
 
 # ==================================================
 # ТУРНИРЫ - ВЕТКА 1: ГЛАВНОЕ МЕНЮ ТУРНИРОВ

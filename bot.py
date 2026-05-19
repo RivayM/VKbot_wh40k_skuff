@@ -14,15 +14,29 @@ from vk_api.longpoll import VkLongPoll, VkEventType
 from handlers.tournament_user import *          # всё из турниров
 from handlers.key_handler import handle_take_key, handle_return_key, handle_who_has_key
 from handlers.sponsorship import *  
+from handlers.event_handlers import *
+from handlers.reserve_handler import *
 
 # Клавиатуры
 from keyboards import *  
-
+from keyboards_event import *
+from handlers.reserve_handler import (
+    waiting_for_reserve_details,
+    waiting_for_cancel_confirm,
+    selected_table,
+    handle_reserve_menu,
+    handle_table_selection,
+    handle_reserve_details,
+    handle_cancel_reserve,
+    handle_cancel_confirm,
+    handle_show_reserve
+)
 # Утилиты
 from utils.helpers import send_message, extract_photo_url
 
 # Инициализация таблиц
 from database.tournament_db import init_tournament_tables
+from database.events_db import init_events_table
 
 # Общие функции базы данных
 # Общие функции базы данных
@@ -62,6 +76,8 @@ logger = logging.getLogger(__name__)
 init_sponsors_table()  # таблицы спонсоров
 init_key_table()       # таблица ключей
 init_tournament_tables()  # турниры
+init_events_table()    # таблица ивентов
+
 logger.info("✅ Базы данных инициализированы")
 
 vk_session = vk_api.VkApi(token=TOKEN)
@@ -115,6 +131,25 @@ for event in longpoll.listen():
         # ОБРАБОТКА КНОПКИ «НАЗАД» (сброс любых ожиданий)
         # ==============================================
         if text == "🔙 Назад":
+
+             # ИВЕНТЫ (кнопка назад)
+            if user_id in waiting_for_event_name:
+                del waiting_for_event_name[user_id]
+            if user_id in waiting_for_event_date:
+                del waiting_for_event_date[user_id]
+            if user_id in waiting_for_event_choice:
+                del waiting_for_event_choice[user_id]
+            if user_id in waiting_for_remove_participant:
+                del waiting_for_remove_participant[user_id]
+
+            # Очистка состояний резерва столов
+            if user_id in waiting_for_reserve_details:
+                del waiting_for_reserve_details[user_id]
+            if user_id in waiting_for_cancel_confirm:
+                del waiting_for_cancel_confirm[user_id]
+            if user_id in selected_table:
+                del selected_table[user_id]
+
             # Очищаем все возможные состояния ожидания
             if user_id in waiting_for_tournament_choice:
                 del waiting_for_tournament_choice[user_id]
@@ -142,6 +177,12 @@ for event in longpoll.listen():
                 del waiting_for_edit_choice[user_id]
             if user_id in waiting_for_edit_roster:
                 del waiting_for_edit_roster[user_id]
+
+            if user_id in waiting_for_event_name:
+                del waiting_for_event_name[user_id]
+            if user_id in waiting_for_event_choice:
+                del waiting_for_event_choice[user_id]
+
             is_admin = user_id in ADMIN_IDS
             if handle_cancel_payment(vk, user_id, send_message, is_admin):
                 continue
@@ -163,10 +204,41 @@ for event in longpoll.listen():
                     send_message(vk, user_id, "🏠 Главное меню:", get_main_keyboard())
             continue   # важно: прерываем дальнейшую обработку
 
-                # ==============================================
+        # ==============================================
         # БЛОК 6: ПРОВЕРКА СОСТОЯНИЙ ПОЛЬЗОВАТЕЛЯ (ожидание ввода)
         # ==============================================
-        
+        # для мероприятий начало 
+        if is_waiting_for_event_name(user_id):
+            is_admin = user_id in ADMIN_IDS
+            handle_event_name_input(vk, user_id, text, send_message, is_admin)
+            continue
+
+        if is_waiting_for_event_date(user_id):
+            is_admin = user_id in ADMIN_IDS
+            handle_event_date_input(vk, user_id, text, send_message, is_admin)
+            continue
+
+        if is_waiting_for_event_choice(user_id):
+            state = waiting_for_event_choice.get(user_id)
+            if state:
+                if state['step'] == 'list':
+                    if handle_event_choice(vk, user_id, text, send_message, is_admin=user_id in ADMIN_IDS):
+                        continue
+                elif state['step'] == 'delete':
+                    if handle_delete_choice(vk, user_id, text, send_message, is_admin=user_id in ADMIN_IDS):
+                        continue
+                elif state['step'] == 'selected':
+                    if handle_event_action(vk, user_id, text, send_message, is_admin=user_id in ADMIN_IDS):
+                        continue
+            continue
+
+        if user_id in waiting_for_remove_participant:
+            handle_remove_participant_confirm(vk, user_id, text, send_message)
+            continue
+
+
+        # для мероприятий конец
+
         # Состояния для спонсоров (оплата)
         if user_id in waiting_for_payment_photo:
             is_admin = user_id in ADMIN_IDS
@@ -229,6 +301,23 @@ for event in longpoll.listen():
         if user_id in waiting_for_new_tournament_max_players:
             handle_new_tournament_max_players(vk, user_id, text, send_message)
             continue
+       
+        # ============================================================
+        # БЛОК 6: резерв столов
+        # ============================================================
+       
+        if is_waiting_for_reserve_details(user_id):
+            handle_reserve_details(vk, user_id, text, send_message, admin_ids=ADMIN_IDS, is_admin=user_id in ADMIN_IDS)
+            continue
+
+        if is_waiting_for_cancel_confirm(user_id):
+            handle_cancel_confirm(vk, user_id, text, send_message)
+            continue
+       
+       
+       
+       
+       
         # ============================================================
         # БЛОК 7: ОБРАБОТКА КОМАНД (КНОПОК И ТЕКСТА)
         # ============================================================
@@ -262,6 +351,9 @@ for event in longpoll.listen():
             #is_admin = user_id in ADMIN_IDS
             #send_message(vk, user_id, "🏆 Раздел ТУРНИРЫ\n\nВыберите действие:",
             #           get_tournament_keyboard(is_admin=is_admin))
+        elif text == "📋 МЕРОПРИЯТИЯ":
+            is_admin = user_id in ADMIN_IDS
+            handle_events_menu(vk, user_id, send_message, is_admin=is_admin)
 
         elif text == "💰 СПОНСОР":
             is_admin = user_id in ADMIN_IDS
@@ -272,6 +364,65 @@ for event in longpoll.listen():
         elif text == "🔑 КЛЮЧИ":
             send_message(vk, user_id, "🔑 Раздел КЛЮЧИ\n\nВыберите действие:",
                         get_key_keyboard())
+        
+        # ============================================================
+        # ---------- МЕРОПРИЯТИЯ ----------
+        # ============================================================
+
+        elif text == "➕ Создать мероприятие" and user_id in ADMIN_IDS:
+            handle_create_event(vk, user_id, send_message)
+
+        elif text == "🗑️ Удалить мероприятие" and user_id in ADMIN_IDS:
+            handle_delete_event(vk, user_id, send_message, is_admin=True)
+
+        elif text == "📋 Список мероприятий":
+            handle_list_events(vk, user_id, send_message)
+
+        elif text == "📋 Посмотреть участников":
+            state = waiting_for_event_choice.get(user_id)
+            if state and state.get('step') == 'selected':
+                handle_show_participants(vk, user_id, send_message, state['event_id'], state['event_name'])
+            else:
+                send_message(vk, user_id, "❌ Сначала выберите мероприятие.")
+
+        elif text == "⚠️ Удалить участника (админ)" and user_id in ADMIN_IDS:
+            state = waiting_for_event_choice.get(user_id)
+            if state and state.get('step') == 'selected':
+                handle_remove_participant_start(vk, user_id, send_message, state['event_id'])
+            else:
+                send_message(vk, user_id, "❌ Сначала выберите мероприятие.")
+
+        # ============================================================
+        # Обработка выбора стола
+        # ============================================================
+        elif text == "🎲 Резерв стола":
+            handle_reserve_menu(vk, user_id, send_message)
+            continue
+
+        elif text.startswith("🎲 Стол "):
+            handle_table_selection(vk, user_id, text, send_message)
+            continue
+
+        elif text == "📝 Зарезервировать" and user_id in waiting_for_reserve_details:
+            # Не нужно – уже обработано через состояние
+            pass
+        
+        elif text == "❌ Снять резерв":
+            if user_id in selected_table:
+                handle_cancel_reserve(vk, user_id, send_message, selected_table[user_id], ADMIN_IDS)
+            else:
+                send_message(vk, user_id, "❌ Сначала выберите стол.")
+            continue
+
+        elif text == "👥 Просмотреть резерв":
+            if user_id in selected_table:
+                handle_show_reserve(vk, user_id, send_message, selected_table[user_id])
+            else:
+                send_message(vk, user_id, "❌ Сначала выберите стол.")
+            continue
+
+
+
 
         # ============================================================
         # ТУРНИРЫ – ВЕТКА 1: ГЛАВНОЕ МЕНЮ ТУРНИРОВ (get_tournament_keyboard)
@@ -306,37 +457,6 @@ for event in longpoll.listen():
 
         elif text == "🏁 Завершить турнир" and user_id in ADMIN_IDS:
             handle_finish_tournament(vk, user_id, send_message)
-
-        # ============================================================
-        # ТУРНИРЫ – ВЕТКА 3: ДЕЙСТВИЯ С ВЫБРАННЫМ ТУРНИРОМ (get_tournament_actions_keyboard)
-        # ============================================================
-        elif text == "📝 Зарегистрироваться":
-            # Регистрация на выбранный турнир (для незарегистрированных)
-            handle_register_user(vk, user_id, send_message)
-
-        elif text == "✏️ Редактировать мои данные":
-            handle_edit_my_data(vk, user_id, send_message)
-
-        elif text == "💳 Внести оплату":
-            # Отправка фото оплаты админу
-            handle_payment(vk, user_id, send_message)
-
-        elif text == "▶️ Начать турнир" and user_id in ADMIN_IDS:
-            # Вызываем функцию рассылки сообщения о начале турнира
-            handle_tournament_start(vk, user_id, send_message)
-
-        elif text == "👥 Список игроков":
-            # Показать список игроков (для всех)
-            handle_show_players_list(vk, user_id, send_message)
-
-        elif text == "⚙️ Управление игроками" and user_id in ADMIN_IDS:
-            # Переход в меню управления игроками (админ)
-            if user_id not in selected_tournament:
-                send_message(vk, user_id, "❌ Сначала выберите турнир через 'Выбрать турнир'.")
-            else:
-                tournament = selected_tournament[user_id]
-                send_message(vk, user_id, f"👥 Управление игроками турнира '{tournament['name']}':",
-                get_players_menu_keyboard(is_admin=True))
 
         # ============================================================
         # ТУРНИРЫ – ВЕТКА 4: УПРАВЛЕНИЕ ИГРОКАМИ (get_players_menu_keyboard)

@@ -1,6 +1,7 @@
 # database/__init__.py
 
 from database import tournament_db
+from database import events_db
 from database.db_manager import get_connection, close_connection
 
 # Импорты из sponsors_db.py
