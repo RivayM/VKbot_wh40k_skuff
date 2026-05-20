@@ -1,9 +1,12 @@
 # handlers/event_handlers.py
 import logging
 import datetime
+import time
+
 from database.events_db import (
     add_event, get_all_events, delete_event,
-    add_participant, remove_participant, get_participants, is_participant
+    add_participant, remove_participant, get_participants, is_participant,
+    set_paid   
 )
 from keyboards_event import (
     get_events_main_keyboard,
@@ -14,6 +17,7 @@ from keyboards_event import (
 logger = logging.getLogger(__name__)
 
 # Хранилища состояний (временные, для ожидания ввода)
+waiting_for_event_payment = {}  # user_id -> {'event_id': int, 'timestamp': float}
 waiting_for_event_name = {}      # user_id -> True
 waiting_for_event_date = {}      # user_id -> {'name': name}
 waiting_for_event_choice = {}    # user_id -> {'step': 'list'/'delete'/'selected', ...}
@@ -95,37 +99,52 @@ def handle_event_choice(vk, user_id, text, send_message_func, is_admin=False):
         'event_name': event['name'],
         'event_date': event.get('event_date', 'дата не указана')
     }
+    print(f"[DEBUG] Состояние после выбора: {waiting_for_event_choice[user_id]}")
     msg = f"Мероприятие: {event['name']}\n📅 Дата: {event['event_date']}\n\nДействия:"
     send_message_func(vk, user_id, msg, get_event_actions_keyboard(is_admin=is_admin))
     return True
 
 def handle_event_action(vk, user_id, text, send_message_func, is_admin=False):
+    print(f"[DEBUG] handle_event_action вызвана с текстом '{text}', user_id={user_id}")
     if user_id not in waiting_for_event_choice:
+        print("[DEBUG] Нет waiting_for_event_choice")
         return False
     state = waiting_for_event_choice[user_id]
+    print(f"[DEBUG] state = {state}")
     if state['step'] != 'selected':
+        print(f"[DEBUG] step не selected, а {state['step']}")
         return False
     eid = state['event_id']
+    print(f"[DEBUG] eid={eid}")
     
     if text == "📝 Зарегистрироваться":
         name = get_user_name(vk, user_id)
-        if add_participant(eid, user_id, name):
+        print(f"[DEBUG] Регистрация: eid={eid}, user={user_id}, name={name}")
+        success = add_participant(eid, user_id, name)
+        print(f"[DEBUG] Успех регистрации: {success}")
+        if success:
             send_message_func(vk, user_id, "✅ Вы зарегистрированы!")
         else:
             send_message_func(vk, user_id, "❌ Вы уже зарегистрированы.")
+        return True
     
     elif text == "❌ Отказаться от участия":
         if remove_participant(eid, user_id):
             send_message_func(vk, user_id, "✅ Вы отказались от участия.")
         else:
             send_message_func(vk, user_id, "❌ Вы не были зарегистрированы.")
+        return True
     
     elif text == "💳 Оплатить":
-        send_message_func(vk, user_id, "💸 Оплата пока не реализована.")
-    
+        if not is_participant(eid, user_id):
+            send_message_func(vk, user_id, "❌ Вы не зарегистрированы на мероприятие. Сначала зарегистрируйтесь.")
+            return True
+        waiting_for_event_payment[user_id] = {'event_id': eid, 'timestamp': time.time()}
+        print(f"[DEBUG] waiting_for_event_payment установлен: {waiting_for_event_payment}")  # добавьте
+        send_message_func(vk, user_id, "💵 Введите сумму оплаты (например, 500):\n(нажмите 'Назад', чтобы отменить)")
+        return True
     else:
         return False
-    
     send_message_func(vk, user_id, f"Мероприятие: {state['event_name']}\n\nДействия:", get_event_actions_keyboard(is_admin=is_admin))
     return True
 
@@ -137,19 +156,25 @@ def handle_show_participants(vk, user_id, send_message_func, event_id, event_nam
     text = f"👥 Участники мероприятия '{event_name}':\n\n"
     for p in participants:
         link = f"https://vk.com/id{p['user_id']}"
-        text += f"{p['name']} ({link})\n"
-    send_message_func(vk, user_id, text)
+        paid_status = "✅ оплатил" if p.get('paid', 0) else "❌ не оплатил"
+        text += f"{p['name']} ({link}) — {paid_status}\n"
+    send_message_func(vk, user_id, text)  
 
 def handle_remove_participant_start(vk, user_id, send_message_func, event_id):
+    print(f"[DEBUG] handle_remove_participant_start: user={user_id}, event={event_id}")
     participants = get_participants(event_id)
+    print(f"[DEBUG] participants = {participants}")
     if not participants:
+        print("[DEBUG] participants empty, sending 'Нет участников'")
         send_message_func(vk, user_id, "📋 Нет участников для удаления.")
         return
     text = "Выберите номер участника для удаления:\n\n"
     for idx, p in enumerate(participants, 1):
         text += f"{idx}. {p['name']} (id{p['user_id']})\n"
     waiting_for_remove_participant[user_id] = {'event_id': event_id, 'participants': participants}
+    print(f"[DEBUG] waiting_for_remove_participant set: {waiting_for_remove_participant}")
     send_message_func(vk, user_id, text)
+    print("[DEBUG] message sent")
 
 def handle_remove_participant_confirm(vk, user_id, text, send_message_func):
     if user_id not in waiting_for_remove_participant:
@@ -207,3 +232,24 @@ def is_waiting_for_event_choice(user_id):
 
 def is_waiting_for_remove_participant(user_id):
     return user_id in waiting_for_remove_participant
+
+def handle_event_payment_amount(vk, user_id, text, send_message_func, is_admin=False):
+    print(f"[DEBUG] ВХОД В handle_event_payment_amount с text={text}, user={user_id}")
+    if user_id not in waiting_for_event_payment:
+        print("[DEBUG] Нет ожидания оплаты")
+        return False
+    data = waiting_for_event_payment.pop(user_id)
+    try:
+        amount = float(text.strip())
+        if amount <= 0:
+            raise ValueError
+        set_paid(data['event_id'], user_id, amount)
+        send_message_func(vk, user_id, f"✅ Спасибо за оплату {amount} руб.!")
+        # Вернуться в меню действий
+        state = waiting_for_event_choice.get(user_id)
+        if state and state.get('step') == 'selected':
+            send_message_func(vk, user_id, f"Мероприятие: {state['event_name']}\n\nДействия:", get_event_actions_keyboard(is_admin=is_admin))
+        return True
+    except ValueError:
+        send_message_func(vk, user_id, "❌ Введите корректную сумму (цифрами).")
+        return True
