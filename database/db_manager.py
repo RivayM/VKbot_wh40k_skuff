@@ -1,5 +1,8 @@
-import sqlite3
+
 import logging
+
+import os
+import sqlite3
 
 logger = logging.getLogger(__name__)
 
@@ -7,14 +10,18 @@ logger = logging.getLogger(__name__)
 conn = None
 cursor = None
 
+# Папка для постоянного хранения (на Bothost это /app/data)
+DATA_DIR = '/app/data' if os.path.exists('/app/data') else 'data'
+os.makedirs(DATA_DIR, exist_ok=True)
+
+DB_PATH = os.path.join(DATA_DIR, 'bot_database.db')
 
 def get_connection():
-    """Возвращает соединение с БД"""
     global conn, cursor
     if conn is None:
-        conn = sqlite3.connect('bot_database.db', check_same_thread=False)
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
         cursor = conn.cursor()
-        logger.info("✅ Подключение к БД установлено")
+        logger.info(f"✅ Подключение к БД установлено: {DB_PATH}")
     return conn, cursor
 
 
