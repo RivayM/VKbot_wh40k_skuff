@@ -11,10 +11,10 @@ def get_moscow_now():
     return datetime.datetime.now(MOSCOW_TZ).strftime('%Y-%m-%d %H:%M:%S')
 
 def reset_monthly_amounts():
-    """Обнуляет monthly_amount и last_payment у всех спонсоров (начинаем новый месяц)"""
-    cursor.execute('UPDATE sponsors SET monthly_amount = 0, last_payment = NULL')
+    """Обнуляет monthly_amount у всех спонсоров (не удаляет спонсоров!)"""
+    cursor.execute('UPDATE sponsors SET monthly_amount = 0')
     conn.commit()
-    print("✅ Месячные суммы и даты оплат обнулены")
+    print("✅ Месячные суммы обнулены")
 
 def init_sponsors_table():
     cursor.execute('''
@@ -63,7 +63,7 @@ def get_sponsor(user_id):
 def get_all_sponsors():
     cursor.execute('SELECT user_id, name, registered_at, last_payment, last_payment_amount, monthly_amount FROM sponsors')
     rows = cursor.fetchall()
-    return [{'user_id': r[0], 'name': r[1], 'registered_at': r[2], 'last_payment': r[3], 'last_payment_amount': r[4], 'monthly_amount': r[5]} for r in rows]
+    return [{'user_id': r[0], 'name': r[1], 'registered_at': r[2], 'last_payment': r[3], 'last_payment_amount': r[4], 'monthly_amount': r[5] or 0} for r in rows]
 
 def get_sponsor_days(user_id):
     cursor.execute('SELECT registered_at FROM sponsors WHERE user_id = ?', (user_id,))

@@ -1,13 +1,11 @@
 # ==================================================
 # БЛОК 1: ИМПОРТ БИБЛИОТЕК И НАСТРОЙКИ
 # ==================================================
-# ==================================================
-# БЛОК 1: ИМПОРТ БИБЛИОТЕК И НАСТРОЙКИ
-# ==================================================
 import vk_api
 import os
 import logging
 from dotenv import load_dotenv
+from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 from vk_api.longpoll import VkLongPoll, VkEventType
 
 # Модули обработчиков
@@ -20,15 +18,16 @@ from handlers.event_handlers import *
 from keyboards import *  
 from keyboards_event import *
 from handlers.reserve_handler import (
-    waiting_for_reserve_details,
-    waiting_for_cancel_confirm,
+    waiting_for_reserve_table,
+    waiting_for_slot_action,
     selected_table,
     handle_reserve_menu,
     handle_table_selection,
-    handle_reserve_details,
-    handle_cancel_reserve,
-    handle_cancel_confirm,
-    handle_show_reserve
+    handle_slot_selection,
+    handle_take_reserve,
+    handle_cancel_reserve_from_action,
+    handle_view_reserve_from_action,
+    is_waiting_for_reserve_table
 )
 # Утилиты
 from utils.helpers import send_message, extract_photo_url
@@ -38,6 +37,7 @@ from database.tournament_db import init_tournament_tables
 from database.events_db import init_events_table
 
 # Общие функции базы данных
+from database.reserve_db import init_reserve_table
 # Общие функции базы данных
 from database import (
     init_sponsors_table,
@@ -76,6 +76,7 @@ init_sponsors_table()  # таблицы спонсоров
 init_key_table()       # таблица ключей
 init_tournament_tables()  # турниры
 init_events_table()    # таблица ивентов
+init_reserve_table()   # таблица резерве
 
 logger.info("✅ Базы данных инициализированы")
 
@@ -144,10 +145,10 @@ for event in longpoll.listen():
                 del waiting_for_event_payment[user_id]
 
             # Очистка состояний резерва столов
-            if user_id in waiting_for_reserve_details:
-                del waiting_for_reserve_details[user_id]
-            if user_id in waiting_for_cancel_confirm:
-                del waiting_for_cancel_confirm[user_id]
+            if user_id in waiting_for_reserve_table:
+                del waiting_for_reserve_table[user_id]
+            if user_id in waiting_for_slot_action:
+                del waiting_for_slot_action[user_id]
             if user_id in selected_table:
                 del selected_table[user_id]
 
@@ -178,6 +179,9 @@ for event in longpoll.listen():
                 del waiting_for_edit_choice[user_id]
             if user_id in waiting_for_edit_roster:
                 del waiting_for_edit_roster[user_id]
+            # удалить спонсора
+            if user_id in waiting_for_remove_sponsor:
+                del waiting_for_remove_sponsor[user_id]
 
             if user_id in waiting_for_event_name:
                 del waiting_for_event_name[user_id]
@@ -245,11 +249,10 @@ for event in longpoll.listen():
                         continue
                 elif step == 'selected':
                     if text in ("📋 Посмотреть участников", "⚠️ Удалить участника (админ)"):
-                        print("[DEBUG] нажал Посмотреть участников или Удалить участника")
                         if text == "📋 Посмотреть участников":
-                            handle_show_participants(vk, user_id, send_message, state['event_id'], state['event_name'])
+                            is_admin = user_id in ADMIN_IDS
+                            handle_show_participants(vk, user_id, send_message, state['event_id'], state['event_name'], is_admin)
                         elif text == "⚠️ Удалить участника (админ)" and user_id in ADMIN_IDS:
-                            print("[DEBUG] нажал Удалить участника")
                             handle_remove_participant_start(vk, user_id, send_message, state['event_id'])
                         continue
                     else:
@@ -257,17 +260,7 @@ for event in longpoll.listen():
                             continue
             continue
         
-        # ==============================================  
-        #  Резерв столов
-        # ==============================================  
-        if user_id in waiting_for_reserve_details:
-            handle_reserve_details(vk, user_id, text, send_message, admin_ids=ADMIN_IDS, is_admin=user_id in ADMIN_IDS)
-            continue
 
-        if user_id in waiting_for_cancel_confirm:
-            handle_cancel_confirm(vk, user_id, text, send_message)
-            continue
-        
         # ==============================================   
         # Состояния для спонсоров (оплата)
         # ============================================== 
@@ -331,6 +324,17 @@ for event in longpoll.listen():
         
         if user_id in waiting_for_new_tournament_max_players:
             handle_new_tournament_max_players(vk, user_id, text, send_message)
+            continue
+
+        if user_id in waiting_for_remove_sponsor:
+            is_admin = user_id in ADMIN_IDS
+            handle_remove_sponsor_confirm(vk, user_id, text, send_message, is_admin)
+            continue
+        # ============================================================
+        # Резерв столов
+        # ============================================================
+        if is_waiting_for_reserve_table(user_id):
+            handle_slot_selection(vk, user_id, text, send_message, ADMIN_IDS)
             continue
 
         # ============================================================
@@ -399,24 +403,17 @@ for event in longpoll.listen():
             handle_table_selection(vk, user_id, text, send_message)
             continue
 
-        elif text == "📝 Зарезервировать" and user_id in waiting_for_reserve_details:
-            # Не нужно – уже обработано через состояние
-            pass
-        
+        elif text == "📝 Зарезервировать":
+            handle_take_reserve(vk, user_id, send_message, ADMIN_IDS)
+            continue
+
         elif text == "❌ Снять резерв":
-            if user_id in selected_table:
-                handle_cancel_reserve(vk, user_id, send_message, selected_table[user_id], ADMIN_IDS)
-            else:
-                send_message(vk, user_id, "❌ Сначала выберите стол.")
+            handle_cancel_reserve_from_action(vk, user_id, send_message)
             continue
 
         elif text == "👥 Просмотреть резерв":
-            if user_id in selected_table:
-                handle_show_reserve(vk, user_id, send_message, selected_table[user_id])
-            else:
-                send_message(vk, user_id, "❌ Сначала выберите стол.")
+            handle_view_reserve_from_action(vk, user_id, send_message)
             continue
-
         # ============================================================
         # КНОПКИ СПОНСОРОВ
         # ============================================================
@@ -440,6 +437,10 @@ for event in longpoll.listen():
             continue
         elif text == "📢 Напомнить об оплате" and user_id in ADMIN_IDS:
             handle_remind_payment(vk, user_id, send_message, is_admin=True)
+            continue
+
+        elif text == "🗑️ Удалить спонсора" and user_id in ADMIN_IDS:
+            handle_remove_sponsor_start(vk, user_id, send_message)
             continue
         # ============================================================
         # КНОПКИ КЛЮЧЕЙ

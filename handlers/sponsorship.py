@@ -21,7 +21,7 @@ waiting_for_photo = {}
 waiting_for_unsubscribe = {}
 waiting_for_payment_amount = {}
 waiting_for_reset_confirm = {}
-
+waiting_for_remove_sponsor = {}
 
 
 def handle_start(vk, user_id, send_message_func):
@@ -125,18 +125,19 @@ def handle_show_sponsors(vk, user_id, send_message_func, is_admin=False):
     if not sponsors:
         send_message_func(vk, user_id, "📋 Нет зарегистрированных спонсоров.")
         return
-    text = "📋 СПОНСОРЫ (сумма за текущий месяц):\n\n"
+    text = "📋 СПОНСОРЫ:\n\n"
     total_sum = 0
     for s in sponsors:
         name = s['name']
-        user_id_sp = s['user_id']
+        uid = s['user_id']
+        link = f"https://vk.com/id{uid}"
         monthly = s.get('monthly_amount', 0) or 0
         if monthly > 0:
-            text += f"{name} (id{user_id_sp}) — ✅ оплатил {monthly} руб.\n"
+            text += f"{name} ({link}) — ✅ оплатил {monthly} руб.\n"
             total_sum += monthly
         else:
-            text += f"{name} (id{user_id_sp}) — ❌ не оплатил\n"
-    text += f"\n💰 Общая сумма поступлений за месяц: {total_sum} руб."
+            text += f"{name} ({link}) — ❌ не оплатил\n"
+    text += f"\n💰 Общая сумма поступлений: {total_sum} руб."
     send_message_func(vk, user_id, text)
 
 def handle_remind_payment(vk, user_id, send_message_func, is_admin=False):
@@ -193,4 +194,33 @@ def handle_reset_confirm(vk, user_id, text, send_message_func, is_admin=False):
         send_message_func(vk, user_id, "✅ Месячные суммы всех спонсоров обнулены.", get_sponsor_keyboard(is_sponsor=True, is_admin=is_admin))
     else:
         send_message_func(vk, user_id, "❌ Сброс отменён.", get_sponsor_keyboard(is_sponsor=True, is_admin=is_admin))
+    return True
+
+def handle_remove_sponsor_start(vk, user_id, send_message_func):
+    """Админ начинает удаление спонсора: показывает список"""
+    sponsors = get_all_sponsors()
+    if not sponsors:
+        send_message_func(vk, user_id, "📋 Нет спонсоров для удаления.")
+        return
+    text = "Выберите номер спонсора для удаления:\n\n"
+    for idx, s in enumerate(sponsors, 1):
+        text += f"{idx}. {s['name']} (id{s['user_id']})\n"
+    waiting_for_remove_sponsor[user_id] = sponsors
+    send_message_func(vk, user_id, text)
+
+def handle_remove_sponsor_confirm(vk, user_id, text, send_message_func, is_admin=False):
+    """Подтверждение удаления спонсора по номеру"""
+    if user_id not in waiting_for_remove_sponsor:
+        return False
+    sponsors = waiting_for_remove_sponsor.pop(user_id)
+    try:
+        idx = int(text.strip())
+        if 1 <= idx <= len(sponsors):
+            sponsor = sponsors[idx-1]
+            remove_sponsor(sponsor['user_id'])
+            send_message_func(vk, user_id, f"✅ Спонсор {sponsor['name']} удалён.")
+        else:
+            send_message_func(vk, user_id, "❌ Неверный номер.")
+    except ValueError:
+        send_message_func(vk, user_id, "❌ Введите номер цифрой.")
     return True

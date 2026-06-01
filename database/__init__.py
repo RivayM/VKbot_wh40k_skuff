@@ -2,6 +2,7 @@
 
 from database import tournament_db
 from database import events_db
+from database import reserve_db
 from database.db_manager import get_connection, close_connection
 
 # Импорты из sponsors_db.py

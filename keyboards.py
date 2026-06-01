@@ -190,11 +190,6 @@ def get_key_keyboard():
 # ==================================================
 
 def get_sponsor_keyboard(is_sponsor=False, is_admin=False):
-    """
-    Клавиатура раздела СПОНСОР
-    - Для обычного пользователя: стать спонсором / подтвердить оплату / отписаться / назад
-    - Для админа: дополнительная кнопка "Напомнить об оплате" и "Показать список"
-    """
     keyboard = VkKeyboard(one_time=False)
     if not is_sponsor:
         keyboard.add_button('💰 Стать спонсором', color=VkKeyboardColor.PRIMARY)
@@ -209,6 +204,8 @@ def get_sponsor_keyboard(is_sponsor=False, is_admin=False):
         keyboard.add_button('📋 Показать список спонсоров', color=VkKeyboardColor.PRIMARY)
         keyboard.add_line()
         keyboard.add_button('🔄 Сбросить месячные суммы', color=VkKeyboardColor.NEGATIVE)
+        keyboard.add_line()
+        keyboard.add_button('🗑️ Удалить спонсора', color=VkKeyboardColor.NEGATIVE)   # новая кнопка
     keyboard.add_line()
     keyboard.add_button('🔙 Назад', color=VkKeyboardColor.NEGATIVE)
     return keyboard

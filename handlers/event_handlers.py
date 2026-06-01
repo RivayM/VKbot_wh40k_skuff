@@ -148,7 +148,7 @@ def handle_event_action(vk, user_id, text, send_message_func, is_admin=False):
     send_message_func(vk, user_id, f"Мероприятие: {state['event_name']}\n\nДействия:", get_event_actions_keyboard(is_admin=is_admin))
     return True
 
-def handle_show_participants(vk, user_id, send_message_func, event_id, event_name):
+def handle_show_participants(vk, user_id, send_message_func, event_id, event_name, is_admin=False):
     participants = get_participants(event_id)
     if not participants:
         send_message_func(vk, user_id, "📋 Нет зарегистрированных участников.")
@@ -156,9 +156,12 @@ def handle_show_participants(vk, user_id, send_message_func, event_id, event_nam
     text = f"👥 Участники мероприятия '{event_name}':\n\n"
     for p in participants:
         link = f"https://vk.com/id{p['user_id']}"
-        paid_status = "✅ оплатил" if p.get('paid', 0) else "❌ не оплатил"
-        text += f"{p['name']} ({link}) — {paid_status}\n"
-    send_message_func(vk, user_id, text)  
+        if is_admin:
+            paid_status = "✅ оплатил" if p.get('paid', 0) else "❌ не оплатил"
+            text += f"{p['name']} ({link}) — {paid_status}\n"
+        else:
+            text += f"{p['name']} ({link})\n"
+    send_message_func(vk, user_id, text)
 
 def handle_remove_participant_start(vk, user_id, send_message_func, event_id):
     print(f"[DEBUG] handle_remove_participant_start: user={user_id}, event={event_id}")
@@ -190,6 +193,42 @@ def handle_remove_participant_confirm(vk, user_id, text, send_message_func):
             send_message_func(vk, user_id, "❌ Неверный номер.")
     except ValueError:
         send_message_func(vk, user_id, "❌ Введите номер цифрой.")
+    return True
+
+def handle_table_selection(vk, user_id, text, send_message_func):
+    print(f"[DEBUG] handle_table_selection вызвана с текстом '{text}'")
+    if not text.startswith('🎲 Стол '):
+        return False
+    try:
+        table_num = int(text.split()[-1])
+    except:
+        return False
+    if table_num not in range(1,5):
+        return False
+    selected_table[user_id] = table_num
+    waiting_for_reserve_table[user_id] = {'table': table_num}
+    # Создаём клавиатуру
+    keyboard = VkKeyboard(one_time=False)
+    today = datetime.date.today()
+    for i in range(4):
+        date_obj = today + datetime.timedelta(days=i)
+        date_str = date_obj.strftime('%d.%m.%Y')
+        iso_date = date_obj.isoformat()
+        for slot in [1,2]:
+            slot_name = "утро" if slot == 1 else "вечер"
+            is_free = rdb.is_slot_free(table_num, iso_date, slot)
+            if is_free:
+                emoji = "☀️" if slot == 1 else "🌙"
+                btn_text = f'{emoji} {date_str} ({slot_name})'
+                color = VkKeyboardColor.POSITIVE
+            else:
+                btn_text = f'❌ {date_str} ({slot_name}) – занято'
+                color = VkKeyboardColor.NEGATIVE
+            keyboard.add_button(btn_text, color=color)
+            keyboard.add_line()
+    keyboard.add_button('🔙 Назад', color=VkKeyboardColor.NEGATIVE)
+    print("[DEBUG] Отправляем клавиатуру с датами")
+    send_message_func(vk, user_id, "🎲 Выберите дату и время:", keyboard)
     return True
 
 def handle_delete_event(vk, user_id, send_message_func, is_admin=False):
