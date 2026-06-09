@@ -1,10 +1,14 @@
 # utils/helpers.py
 import time
 
-def send_message(vk, user_id, message, keyboard=None):
-    """Отправляет сообщение пользователю с защитой от дублей"""
+# utils/helpers.py
+def send_message(vk, peer_id, message, keyboard=None):
+    """
+    Отправляет сообщение в диалог (ЛС или беседу)
+    peer_id: id пользователя или id беседы (2000000000 + chat_id)
+    """
     params = {
-        'user_id': user_id,
+        'peer_id': peer_id,  # используем peer_id вместо user_id
         'message': message,
         'random_id': 0
     }
@@ -16,11 +20,9 @@ def send_message(vk, user_id, message, keyboard=None):
             params['keyboard'] = keyboard
     
     try:
-        # Небольшая задержка перед отправкой
-        time.sleep(0.3)
         vk.messages.send(**params)
     except Exception as e:
-        print(f"Ошибка отправки сообщения {user_id}: {e}")
+        print(f"Ошибка отправки сообщения в диалог {peer_id}: {e}")
 
 
 def extract_photo_url(attachments):

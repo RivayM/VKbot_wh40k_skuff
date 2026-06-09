@@ -2,12 +2,18 @@
 # БЛОК 1: ИМПОРТ БИБЛИОТЕК И НАСТРОЙКИ
 # ==================================================
 import vk_api
+import re
 import os
 import logging
 from dotenv import load_dotenv
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
-from vk_api.longpoll import VkLongPoll, VkEventType
+from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
 
+
+# Чат с ИИ
+from CHAT import init_chat_users_table, register_chat_commands
+from CHAT import init_gemini
+from CHAT import get_user_data
 # Модули обработчиков
 from handlers.tournament_user import *          # всё из турниров
 from handlers.key_handler import handle_take_key, handle_return_key, handle_who_has_key
@@ -60,7 +66,7 @@ load_dotenv()
 
 TOKEN = os.getenv("VK_TOKEN")
 ADMIN_IDS = [int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
-
+GROUP_ID = int(os.getenv("GROUP_ID", 0))
 
 # ==================================================
 # БЛОК 3: НАСТРОЙКА ЛОГГИРОВАНИЯ
@@ -72,18 +78,24 @@ logger = logging.getLogger(__name__)
 # ==================================================
 # БЛОК 4: ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ И ПОДКЛЮЧЕНИЕ К ВК
 # ==================================================
-init_sponsors_table()  # таблицы спонсоров
-init_key_table()       # таблица ключей
-init_tournament_tables()  # турниры
-init_events_table()    # таблица ивентов
-init_reserve_table()   # таблица резерве
-
+init_sponsors_table()       # таблицы спонсоров
+init_key_table()            # таблица ключей
+init_tournament_tables()    # турниры
+init_events_table()         # таблица ивентов
+init_reserve_table()        # таблица резерве
+init_chat_users_table()     # чат гемени мои обработчики
+init_gemini()               # чат гемени сам чат        
 logger.info("✅ Базы данных инициализированы")
 
 vk_session = vk_api.VkApi(token=TOKEN)
 vk = vk_session.get_api()
-longpoll = VkLongPoll(vk_session)
-
+# Регистрация команд чата
+try:
+    chat_commands = register_chat_commands(vk)
+    logger.info("✅ chat_commands зарегистрирован")
+except Exception as e:
+    logger.error(f"❌ Ошибка регистрации chat_commands: {e}")
+longpoll = VkBotLongPoll(vk_session, GROUP_ID)
 logger.info("🚀 БОТ ЗАПУЩЕН")
 logger.info(f"📱 Админы: {ADMIN_IDS}")
 
@@ -96,10 +108,22 @@ logger.info(f"📱 Админы: {ADMIN_IDS}")
 processed_messages = {}
 
 for event in longpoll.listen():
-    if event.type == VkEventType.MESSAGE_NEW and event.to_me:
-        user_id = event.user_id
-        text = event.text.strip() if event.text else ""
+    if event.type == VkBotEventType.MESSAGE_NEW and event.object.message:
+        msg = event.object.message
+        user_id = msg['from_id']
+        text = msg['text'].strip() if msg['text'] else ""
+        peer_id = msg['peer_id']
         
+        # Диагностика
+        print(f"\n🔵 НОВОЕ СООБЩЕНИЕ")
+        print(f"   От: {user_id}")
+        print(f"   В диалог: {peer_id}")
+        print(f"   Текст: '{text[:150]}'")
+        if peer_id > 2000000000:
+            print(f"   ✅ ЭТО БЕСЕДА! (peer_id > 2e9)")
+        else:
+            print(f"   📩 ЭТО ЛИЧНЫЕ СООБЩЕНИЯ")
+
         if not text:
             continue
         
@@ -206,7 +230,7 @@ for event in longpoll.listen():
                         f"🏠 Главное меню\n\nВы спонсор уже {days_count} дней! 🙏",
                         get_main_keyboard())
                 else:
-                    send_message(vk, user_id, "🏠 Главное меню:", get_main_keyboard())
+                    send_message(vk, peer_id, "🏠 Главное меню:", get_main_keyboard())
             continue   # важно: прерываем дальнейшую обработку
 
         # ==============================================
@@ -341,6 +365,12 @@ for event in longpoll.listen():
         # БЛОК 7: ОБРАБОТКА КОМАНД (КНОПОК И ТЕКСТА)
         # ============================================================
         print(f"[DEBUG] Блок7: текст='{text}', user={get_user_name(vk, user_id)}")
+        print(f"🔵 ПОЛУЧЕНО СООБЩЕНИЕ от {user_id}: '{text[:50]}'")
+        if event.from_chat:
+            print(f"🔵 [ДИАГНОСТИКА] Сообщение из БЕСЕДЫ! ID беседы: {event.chat_id}, peer_id: {event.object.peer_id}")
+            print(f"🔵 [ДИАГНОСТИКА] Текст: '{text}'")
+        else:
+            print(f"🔵 [ДИАГНОСТИКА] Сообщение из ЛИЧНЫХ СООБЩЕНИЙ")
         # --- ГЛАВНОЕ МЕНЮ (кнопки /start, ТУРНИРЫ, СПОНСОР, КЛЮЧИ) ---
         if text == "/start":
             # Сбрасываем выбранный турнир для этого пользователя
@@ -348,18 +378,18 @@ for event in longpoll.listen():
                 del selected_tournament[user_id]
             if is_sponsor(user_id):
                 days_count = get_sponsor_days(user_id)
-                send_message(vk, user_id, 
+                send_message(vk, peer_id, 
                     f"🏠 С возвращением!\n\nВы спонсор уже {days_count} дней! 🙏", 
                     get_main_keyboard())
             else:
-                send_message(vk, user_id, 
+                send_message(vk, peer_id, 
                     "🏠 Добро пожаловать!\n\nЯ бот для управления турнирами, спонсорами и ключами.\n\n"
                     "Выберите раздел в меню ниже:", 
                     get_main_keyboard())
             continue
 
         elif text == "🏆 ТУРНИРЫ":
-            send_message(vk, user_id, "🚧 Пока В разработке")   
+            send_message(vk, peer_id, "🚧 Пока В разработке")   
             continue
 
         elif text == "📋 МЕРОПРИЯТИЯ":
@@ -369,11 +399,11 @@ for event in longpoll.listen():
         elif text == "💰 СПОНСОР":
             is_admin = user_id in ADMIN_IDS
             is_sponsor_flag = is_sponsor(user_id)
-            send_message(vk, user_id, "💰 Меню спонсора\n\nВыберите действие:",
+            send_message(vk, peer_id, "💰 Меню спонсора\n\nВыберите действие:",
             get_sponsor_keyboard(is_sponsor=is_sponsor_flag, is_admin=is_admin))
             continue
         elif text == "🔑 КЛЮЧИ":
-            send_message(vk, user_id, "🔑 Раздел КЛЮЧИ\n\nВыберите действие:",
+            send_message(vk, peer_id, "🔑 Раздел КЛЮЧИ\n\nВыберите действие:",
                         get_key_keyboard())
             continue
         # ============================================================
@@ -442,6 +472,7 @@ for event in longpoll.listen():
         elif text == "🗑️ Удалить спонсора" and user_id in ADMIN_IDS:
             handle_remove_sponsor_start(vk, user_id, send_message)
             continue
+
         # ============================================================
         # КНОПКИ КЛЮЧЕЙ
         # ============================================================
@@ -454,10 +485,47 @@ for event in longpoll.listen():
         elif text == "❓ Кто держит ключ":
             handle_who_has_key(vk, user_id, send_message)
             continue
-    
+
+        
+        # ============================================================
+        # ЧАТ С ИИ (Gemini)
+        # ============================================================
+      
+        # Очищаем текст от упоминания бота для проверки команд
+        clean_text = re.sub(r'\[club\d+\|"[^"]+"\]\s*', '', text).strip()
+        print(f"🔍 ОЧИЩЕННЫЙ ТЕКСТ: '{clean_text}'")
+        
+        # 1.СНАЧАЛА проверяем команду фракция
+        if clean_text.startswith("фракция"):
+            print(f"🟢 КОМАНДА 'ФРАКЦИЯ' РАСПОЗНАНА!")
+            chat_commands["фракция"](user_id, peer_id, clean_text, send_message)
+            continue
+
+        # 2. Проверяем, есть ли фракция у пользователя
+        user_data = get_user_data(user_id)
+        if not user_data or not user_data.get('faction'):
+            send_message(vk, peer_id, "⚔️ Воин, ты не выбрал фракцию!\n\nНапиши: фракция [название]")
+            continue
+
+        # 3. Проверка упоминания бота
+        GROUP_ID = "236042707"
+        GROUP_NAME = "Скуфетерий"
+        
+        is_bot_mention = False
+        if f"[club{GROUP_ID}|" in text or GROUP_NAME in text:
+            is_bot_mention = True
+            print(f"🟢 Бот упомянут!")
+
+        # 4. Альтернативные команды
+        is_bot_command = clean_text.startswith("!ask ") or clean_text.startswith("бот,")
+
+        if is_bot_mention or is_bot_command:
+            print(f"🟢 ОТПРАВЛЯЮ ЗАПРОС В GEMINI")
+            chat_commands["чат"](user_id, peer_id, text, send_message)
+            continue
         # ============================================================
         # НЕИЗВЕСТНАЯ КОМАНДА
         # ============================================================
         else:
-            send_message(vk, user_id, "🏠 Главное меню:", get_main_keyboard())  
+            send_message(vk, peer_id, "🏠 Главное меню:", get_main_keyboard())  
             continue
