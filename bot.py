@@ -488,43 +488,6 @@ for event in longpoll.listen():
             handle_who_has_key(vk, user_id, send_message)
             continue
 
-        
-        # ============================================================
-        # ЧАТ С ИИ (Gemini)
-        # ============================================================
-      
-        # Очищаем текст от упоминания бота для проверки команд
-        clean_text = re.sub(r'\[club\d+\|"[^"]+"\]\s*', '', text).strip()
-        print(f"🔍 ОЧИЩЕННЫЙ ТЕКСТ: '{clean_text}'")
-        
-        # 1.СНАЧАЛА проверяем команду фракция
-        if clean_text.startswith("фракция"):
-            print(f"🟢 КОМАНДА 'ФРАКЦИЯ' РАСПОЗНАНА!")
-            chat_commands["фракция"](user_id, peer_id, clean_text, send_message)
-            continue
-
-        # 2. Проверяем, есть ли фракция у пользователя
-        user_data = get_user_data(user_id)
-        if not user_data or not user_data.get('faction'):
-            send_message(vk, peer_id, "⚔️ Воин, ты не выбрал фракцию!\n\nНапиши: фракция [название]")
-            continue
-
-        # 3. Проверка упоминания бота
-        GROUP_ID = "236042707"
-        GROUP_NAME = "Скуфетерий"
-        
-        is_bot_mention = False
-        if f"[club{GROUP_ID}|" in text or GROUP_NAME in text:
-            is_bot_mention = True
-            print(f"🟢 Бот упомянут!")
-
-        # 4. Альтернативные команды
-        is_bot_command = clean_text.startswith("!ask ") or clean_text.startswith("бот,")
-
-        if is_bot_mention or is_bot_command:
-            print(f"🟢 ОТПРАВЛЯЮ ЗАПРОС В GEMINI")
-            chat_commands["чат"](user_id, peer_id, text, send_message)
-            continue
         # ============================================================
         # НЕИЗВЕСТНАЯ КОМАНДА
         # ============================================================
