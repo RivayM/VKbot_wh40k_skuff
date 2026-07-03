@@ -9,7 +9,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-MODEL_NAME = "gemini-2.0-flash"
+MODEL_NAME = "gemini-2.0-flash-lite"
 
 WARHAMMER_STYLE = """Ты — мрачный и эпичный помощник в стиле вселенной Warhammer 40,000. 
 Твои ответы должны быть пафосными, суровыми и немного мрачными. 
@@ -76,6 +76,8 @@ def call_gemini(prompt, user_name, faction, mentions_str=""):
         print(f"[DEBUG GEMINI] Ответ API: {response.text[:200] if response.text else 'НЕТ ТЕКСТА'}")
         return response.text if response.text else "Дух машин молчит..."
     except Exception as e:
+        if "429" in str(e):
+            return "⚔️ Дух машин перегружен! Квота на сегодня исчерпана. Попробуй завтра, воин."
         print(f"[DEBUG GEMINI] ОШИБКА: {e}")
         return f"Ошибка: {e}"
 

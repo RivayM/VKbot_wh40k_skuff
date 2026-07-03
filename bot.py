@@ -24,16 +24,19 @@ from handlers.event_handlers import *
 from keyboards import *  
 from keyboards_event import *
 from handlers.reserve_handler import (
-    waiting_for_reserve_table,
-    waiting_for_slot_action,
-    selected_table,
     handle_reserve_menu,
+    handle_date_selection,
     handle_table_selection,
-    handle_slot_selection,
     handle_take_reserve,
     handle_cancel_reserve_from_action,
     handle_view_reserve_from_action,
-    is_waiting_for_reserve_table
+    handle_back,
+    is_waiting_for_date,
+    is_waiting_for_table,
+    is_waiting_for_action,
+    waiting_for_date,
+    waiting_for_table,
+    waiting_for_action
 )
 # Утилиты
 from utils.helpers import send_message, extract_photo_url
@@ -169,12 +172,12 @@ for event in longpoll.listen():
                 del waiting_for_event_payment[user_id]
 
             # Очистка состояний резерва столов
-            if user_id in waiting_for_reserve_table:
-                del waiting_for_reserve_table[user_id]
-            if user_id in waiting_for_slot_action:
-                del waiting_for_slot_action[user_id]
-            if user_id in selected_table:
-                del selected_table[user_id]
+            if user_id in waiting_for_date:
+                del waiting_for_date[user_id]
+            if user_id in waiting_for_table:
+                del waiting_for_table[user_id]
+            if user_id in waiting_for_action:
+                del waiting_for_action[user_id]
 
             # Очищаем все возможные состояния ожидания
             if user_id in waiting_for_tournament_choice:
@@ -357,9 +360,17 @@ for event in longpoll.listen():
         # ============================================================
         # Резерв столов
         # ============================================================
-        if is_waiting_for_reserve_table(user_id):
-            handle_slot_selection(vk, user_id, text, send_message, ADMIN_IDS)
+        if is_waiting_for_date(user_id):
+            handle_date_selection(vk, user_id, text, send_message)
             continue
+
+        if is_waiting_for_table(user_id):
+            handle_table_selection(vk, user_id, text, send_message, ADMIN_IDS)
+            continue
+
+        if is_waiting_for_action(user_id):
+            # Обработка кнопок "Зарезервировать", "Снять резерв", "Посмотреть резерв" будет в Блоке 7
+            pass
 
         # ============================================================
         # БЛОК 7: ОБРАБОТКА КОМАНД (КНОПОК И ТЕКСТА)
@@ -429,8 +440,12 @@ for event in longpoll.listen():
             handle_reserve_menu(vk, user_id, send_message)
             continue
 
-        elif text.startswith("🎲 Стол "):
-            handle_table_selection(vk, user_id, text, send_message)
+        elif text == "🔙 Назад":
+            # Если пользователь в меню резерва, обрабатываем через handle_back
+            if is_waiting_for_date(user_id) or is_waiting_for_table(user_id) or is_waiting_for_action(user_id):
+                handle_back(vk, user_id, send_message)
+                continue
+            # ... остальная обработка "Назад"
             continue
 
         elif text == "📝 Зарезервировать":
@@ -441,7 +456,7 @@ for event in longpoll.listen():
             handle_cancel_reserve_from_action(vk, user_id, send_message)
             continue
 
-        elif text == "👥 Просмотреть резерв":
+        elif text == "📋 Посмотреть резерв":
             handle_view_reserve_from_action(vk, user_id, send_message)
             continue
         # ============================================================
