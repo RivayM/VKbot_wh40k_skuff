@@ -9,11 +9,6 @@ from dotenv import load_dotenv
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
 
-
-# Чат с ИИ
-from CHAT import init_chat_users_table, register_chat_commands
-from CHAT import init_gemini
-from CHAT import get_user_data
 # Модули обработчиков
 from handlers.tournament_user import *          # всё из турниров
 from handlers.key_handler import handle_take_key, handle_return_key, handle_who_has_key
@@ -85,19 +80,11 @@ init_sponsors_table()       # таблицы спонсоров
 init_key_table()            # таблица ключей
 init_tournament_tables()    # турниры
 init_events_table()         # таблица ивентов
-init_reserve_table()        # таблица резерве
-init_chat_users_table()     # чат гемени мои обработчики
-init_gemini()               # чат гемени сам чат        
+init_reserve_table()        # таблица резерве      
 logger.info("✅ Базы данных инициализированы")
 
 vk_session = vk_api.VkApi(token=TOKEN)
 vk = vk_session.get_api()
-# Регистрация команд чата
-try:
-    chat_commands = register_chat_commands(vk)
-    logger.info("✅ chat_commands зарегистрирован")
-except Exception as e:
-    logger.error(f"❌ Ошибка регистрации chat_commands: {e}")
 longpoll = VkBotLongPoll(vk_session, GROUP_ID)
 logger.info("🚀 БОТ ЗАПУЩЕН")
 logger.info(f"📱 Админы: {ADMIN_IDS}")
