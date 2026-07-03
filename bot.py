@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 from vk_api.longpoll import VkLongPoll, VkEventType
 
+
 # Модули обработчиков
 from handlers.tournament_user import *          # всё из турниров
 from handlers.key_handler import handle_take_key, handle_return_key, handle_who_has_key
@@ -356,7 +357,7 @@ for event in longpoll.listen():
         # ============================================================
         # БЛОК 7: ОБРАБОТКА КОМАНД (КНОПОК И ТЕКСТА)
         # ============================================================
-        print(f"[DEBUG] Блок7: текст='{text}', user={get_user_name(vk, user_id)}")
+      
         print(f"🔵 ПОЛУЧЕНО СООБЩЕНИЕ от {user_id}: '{text[:50]}'")
         if event.from_chat:
             print(f"🔵 [ДИАГНОСТИКА] Сообщение из БЕСЕДЫ! ID беседы: {event.chat_id}, peer_id: {event.object.peer_id}")
