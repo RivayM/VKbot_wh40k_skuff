@@ -7,7 +7,7 @@ import os
 import logging
 from dotenv import load_dotenv
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
-from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
+from vk_api.longpoll import VkLongPoll, VkEventType
 
 # Модули обработчиков
 from handlers.tournament_user import *          # всё из турниров
@@ -85,7 +85,7 @@ logger.info("✅ Базы данных инициализированы")
 
 vk_session = vk_api.VkApi(token=TOKEN)
 vk = vk_session.get_api()
-longpoll = VkBotLongPoll(vk_session, GROUP_ID)
+longpoll = VkLongPoll(vk_session)
 logger.info("🚀 БОТ ЗАПУЩЕН")
 logger.info(f"📱 Админы: {ADMIN_IDS}")
 
@@ -98,21 +98,15 @@ logger.info(f"📱 Админы: {ADMIN_IDS}")
 processed_messages = {}
 
 for event in longpoll.listen():
-    if event.type == VkBotEventType.MESSAGE_NEW and event.object.message:
-        msg = event.object.message
-        user_id = msg['from_id']
-        text = msg['text'].strip() if msg['text'] else ""
-        peer_id = msg['peer_id']
+    if event.type == VkEventType.MESSAGE_NEW and event.to_me:
+        user_id = event.user_id
+        text = event.text.strip() if event.text else ""
+        peer_id = event.peer_id if hasattr(event, 'peer_id') else user_id
         
-        # Диагностика
         print(f"\n🔵 НОВОЕ СООБЩЕНИЕ")
         print(f"   От: {user_id}")
         print(f"   В диалог: {peer_id}")
         print(f"   Текст: '{text[:150]}'")
-        if peer_id > 2000000000:
-            print(f"   ✅ ЭТО БЕСЕДА! (peer_id > 2e9)")
-        else:
-            print(f"   📩 ЭТО ЛИЧНЫЕ СООБЩЕНИЯ")
 
         if not text:
             continue
